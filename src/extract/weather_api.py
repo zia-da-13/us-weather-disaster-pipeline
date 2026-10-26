@@ -1,3 +1,7 @@
+import json
+from datetime import datetime
+from pathlib import Path
+
 import requests
 
 
@@ -40,6 +44,36 @@ def get_weather_forecast():
     return forecast_data
 
 
+def save_raw_weather_data(weather_data):
+    raw_data_folder = Path("data/raw/weather")
+
+    raw_data_folder.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    timestamp = datetime.now().strftime(
+        "%Y_%m_%d_%H%M%S"
+    )
+
+    file_name = f"weather_{timestamp}.json"
+
+    file_path = raw_data_folder / file_name
+
+    with open(
+        file_path,
+        "w",
+        encoding="utf-8"
+    ) as file:
+        json.dump(
+            weather_data,
+            file,
+            indent=4
+        )
+
+    print(f"\nRaw weather data saved to: {file_path}")
+
+
 def transform_weather_data(weather_data):
     periods = weather_data["properties"]["periods"]
 
@@ -73,27 +107,41 @@ def display_weather_records(weather_records):
 
     for record in weather_records:
         print(f"\nPeriod: {record['period_name']}")
+
         print(
             f"Temperature: "
             f"{record['temperature']} "
             f"{record['temperature_unit']}"
         )
+
         print(
             f"Precipitation Chance: "
             f"{record['precipitation_chance']}%"
         )
+
         print(
             f"Wind: "
             f"{record['wind_speed']} "
             f"{record['wind_direction']}"
         )
-        print(f"Forecast: {record['short_forecast']}")
+
+        print(
+            f"Forecast: "
+            f"{record['short_forecast']}"
+        )
+
         print("-" * 50)
 
 
 if __name__ == "__main__":
     weather_data = get_weather_forecast()
 
-    weather_records = transform_weather_data(weather_data)
+    save_raw_weather_data(weather_data)
 
-    display_weather_records(weather_records)
+    weather_records = transform_weather_data(
+        weather_data
+    )
+
+    display_weather_records(
+        weather_records
+    )
