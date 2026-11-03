@@ -3,4 +3,7 @@ __pycache__/
 .env
 *.pyc
 .vscode/
+
+# Generated data files
 data/raw/
+data/processed/
