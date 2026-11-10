@@ -1,6 +1,7 @@
 
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -43,20 +44,31 @@ def convert_datetime(value, timezone_code):
 
     parsed_date = datetime.strptime(value, "%d-%b-%y %H:%M:%S")
 
-    # NOAA uses codes such as EST-5 and CST-6.
-    # The number represents the UTC offset.
-    if timezone_code:
-        import re
+    if not timezone_code:
+        return None
 
-        match = re.fullmatch(r"[A-Za-z]+([+-]\d{1,2})", timezone_code)
+    timezone_code = timezone_code.strip().upper()
 
-        if match:
-            hours = int(match.group(1))
-            return parsed_date.replace(
-                tzinfo=timezone(timedelta(hours=hours))
-            )
+    # Guam Standard Time is UTC+10.
+    if timezone_code == "GST10":
+        return parsed_date.replace(
+            tzinfo=timezone(timedelta(hours=10))
+        )
 
-    # Unknown timezone: do not invent a UTC offset.
+    # Handle NOAA timezone codes such as EST-5 and CST-6.
+    match = re.fullmatch(
+        r"[A-Z]+([+-]\d{1,2})",
+        timezone_code
+    )
+
+    if match:
+        hours = int(match.group(1))
+
+        return parsed_date.replace(
+            tzinfo=timezone(timedelta(hours=hours))
+        )
+
+    # Leave unknown timezones as NULL instead of guessing.
     return None
 
 
@@ -131,12 +143,18 @@ def load_noaa_to_database(records):
     ]
 
     column_names = ", ".join(columns)
-    placeholders = ", ".join(f"%({column})s" for column in columns)
 
-    update_columns = [column for column in columns if column != "event_id"]
+    placeholders = ", ".join(
+        f"%({column})s" for column in columns
+    )
+
+    update_columns = [
+        column for column in columns if column != "event_id"
+    ]
 
     update_clause = ", ".join(
-        f"{column} = EXCLUDED.{column}" for column in update_columns
+        f"{column} = EXCLUDED.{column}"
+        for column in update_columns
     )
 
     insert_query = f"""
