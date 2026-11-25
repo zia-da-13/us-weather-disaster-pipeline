@@ -1,6 +1,7 @@
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import psycopg
@@ -29,6 +30,7 @@ def get_latest_fema_file():
     )
 
     print(f"Latest FEMA file: {latest_file}")
+
     return latest_file
 
 
@@ -36,7 +38,12 @@ def load_fema_data(file_path):
     with open(file_path, "r", encoding="utf-8") as file:
         fema_records = json.load(file)
 
+    if not isinstance(fema_records, list):
+        print("Invalid FEMA data format.")
+        return None
+
     print(f"Loaded {len(fema_records)} transformed FEMA records.")
+
     return fema_records
 
 
@@ -105,17 +112,22 @@ def load_fema_to_database(fema_records):
 
 
 def main():
-    latest_file = get_latest_fema_file()
-
-    if latest_file is None:
-        return
+    """
+    Run the FEMA disaster loading pipeline.
+    """
 
     try:
+        latest_file = get_latest_fema_file()
+
+        if latest_file is None:
+            print("FEMA loading failed.")
+            sys.exit(1)
+
         fema_records = load_fema_data(latest_file)
 
         if not fema_records:
-            print("No FEMA records to load.")
-            return
+            print("No valid FEMA records to load.")
+            sys.exit(1)
 
         unique_fields = (
             "disaster_number",
@@ -124,15 +136,45 @@ def main():
         )
 
         for record in fema_records:
-            if any(record.get(field) is None for field in unique_fields):
-                print("FEMA loading stopped: missing unique key value.")
-                return
+
+            if not isinstance(record, dict):
+                print("Invalid FEMA record format.")
+                sys.exit(1)
+
+            for field in unique_fields:
+
+                value = record.get(field)
+
+                if value is None or (
+                    isinstance(value, str)
+                    and not value.strip()
+                ):
+                    print(
+                        f"FEMA loading stopped: "
+                        f"missing unique key value for {field}."
+                    )
+                    sys.exit(1)
+
+        print(
+            "FEMA composite key validation "
+            "completed successfully."
+        )
 
         load_fema_to_database(fema_records)
+
         print("FEMA loading completed successfully.")
 
-    except (psycopg.Error, OSError, ValueError, TypeError) as error:
+    except (
+        psycopg.Error,
+        OSError,
+        ValueError,
+        TypeError,
+        AttributeError,
+        KeyError,
+        OverflowError
+    ) as error:
         print(f"FEMA loading failed: {error}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

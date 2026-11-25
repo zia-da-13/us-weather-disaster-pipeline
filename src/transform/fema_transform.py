@@ -1,4 +1,6 @@
+
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,13 +48,30 @@ def load_fema_data(file_path):
             "r",
             encoding="utf-8"
         ) as file:
+
             fema_data = json.load(file)
+
+        if not isinstance(fema_data, dict):
+            print("Invalid FEMA JSON format.")
+            return None
+
+        disaster_records = fema_data.get(
+            "DisasterDeclarationsSummaries"
+        )
+
+        if not isinstance(disaster_records, list):
+            print("Invalid FEMA disaster records format.")
+            return None
+
+        if not disaster_records:
+            print("No FEMA disaster records found.")
+            return None
 
         print("Raw FEMA disaster data loaded successfully.")
 
         return fema_data
 
-    except (OSError, json.JSONDecodeError) as error:
+    except (OSError, ValueError) as error:
         print(f"Error loading FEMA data: {error}")
         return None
 
@@ -74,6 +93,10 @@ def transform_fema_data(fema_data):
     transformed_records = []
 
     for disaster in disaster_records:
+
+        if not isinstance(disaster, dict):
+            print("Invalid FEMA disaster record.")
+            return []
 
         record = {
             "disaster_number": disaster.get(
@@ -148,11 +171,6 @@ def save_transformed_fema_data(
         / "fema"
     )
 
-    output_directory.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
     timestamp = datetime.now(
         timezone.utc
     ).strftime("%Y%m%d_%H%M%S")
@@ -162,17 +180,27 @@ def save_transformed_fema_data(
         / f"fema_disasters_clean_{timestamp}.json"
     )
 
+    temporary_file = output_file.with_suffix(".json.tmp")
+
     try:
+        output_directory.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
         with open(
-            output_file,
+            temporary_file,
             "w",
             encoding="utf-8"
         ) as file:
+
             json.dump(
                 transformed_records,
                 file,
                 indent=4
             )
+
+        temporary_file.replace(output_file)
 
         print(
             f"Transformed FEMA disaster data saved to: "
@@ -181,11 +209,14 @@ def save_transformed_fema_data(
 
         return output_file
 
-    except OSError as error:
+    except (OSError, ValueError, TypeError) as error:
         print(
             f"Error saving transformed FEMA data: "
             f"{error}"
         )
+
+        temporary_file.unlink(missing_ok=True)
+
         return None
 
 
@@ -194,25 +225,49 @@ def main():
     Run the FEMA transformation pipeline.
     """
 
-    latest_file = get_latest_fema_file()
+    try:
+        latest_file = get_latest_fema_file()
 
-    if latest_file is None:
-        return
+        if latest_file is None:
+            print("FEMA transformation failed.")
+            sys.exit(1)
 
-    fema_data = load_fema_data(
-        latest_file
-    )
+        fema_data = load_fema_data(
+            latest_file
+        )
 
-    if fema_data is None:
-        return
+        if fema_data is None:
+            print("FEMA data loading failed.")
+            sys.exit(1)
 
-    transformed_records = transform_fema_data(
-        fema_data
-    )
+        transformed_records = transform_fema_data(
+            fema_data
+        )
 
-    save_transformed_fema_data(
-        transformed_records
-    )
+        if not transformed_records:
+            print("No FEMA disaster records transformed.")
+            sys.exit(1)
+
+        output_file = save_transformed_fema_data(
+            transformed_records
+        )
+
+        if output_file is None:
+            print("FEMA data saving failed.")
+            sys.exit(1)
+
+        print(
+            "FEMA disaster transformation completed successfully."
+        )
+
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        AttributeError
+    ) as error:
+        print(f"FEMA transformation failed: {error}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
