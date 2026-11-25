@@ -1,5 +1,7 @@
+
 import csv
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,6 +45,18 @@ def load_noaa_data(file_path):
 
     records = []
 
+    required_columns = {
+        "EPISODE_ID",
+        "EVENT_ID",
+        "YEAR",
+        "MONTH_NAME",
+        "STATE",
+        "EVENT_TYPE",
+        "BEGIN_DATE_TIME",
+        "END_DATE_TIME",
+        "CZ_TIMEZONE"
+    }
+
     try:
         with open(
             file_path,
@@ -51,7 +65,18 @@ def load_noaa_data(file_path):
             newline=""
         ) as file:
 
-            reader = csv.DictReader(file)
+            reader = csv.DictReader(file, strict=True)
+
+            missing_columns = required_columns - set(
+                reader.fieldnames or []
+            )
+
+            if missing_columns:
+                print(
+                    f"Missing required NOAA columns: "
+                    f"{sorted(missing_columns)}"
+                )
+                return []
 
             for row in reader:
                 records.append(row)
@@ -62,7 +87,7 @@ def load_noaa_data(file_path):
 
         return records
 
-    except (OSError, csv.Error) as error:
+    except (OSError, csv.Error, UnicodeError) as error:
         print(f"Error loading NOAA data: {error}")
         return []
 
@@ -259,11 +284,6 @@ def save_transformed_noaa_data(
         / "noaa_storms"
     )
 
-    output_directory.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
     timestamp = datetime.now(
         timezone.utc
     ).strftime("%Y%m%d_%H%M%S")
@@ -273,9 +293,16 @@ def save_transformed_noaa_data(
         / f"noaa_storms_clean_{timestamp}.json"
     )
 
+    temporary_file = output_file.with_suffix(".json.tmp")
+
     try:
+        output_directory.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
         with open(
-            output_file,
+            temporary_file,
             "w",
             encoding="utf-8"
         ) as file:
@@ -287,6 +314,8 @@ def save_transformed_noaa_data(
                 ensure_ascii=False
             )
 
+        temporary_file.replace(output_file)
+
         print(
             f"Transformed NOAA storm data saved to: "
             f"{output_file}"
@@ -294,11 +323,13 @@ def save_transformed_noaa_data(
 
         return output_file
 
-    except OSError as error:
+    except (OSError, ValueError, TypeError) as error:
         print(
             f"Error saving transformed NOAA data: "
             f"{error}"
         )
+
+        temporary_file.unlink(missing_ok=True)
 
         return None
 
@@ -308,25 +339,51 @@ def main():
     Run the NOAA Storm Events transformation pipeline.
     """
 
-    latest_file = get_latest_noaa_file()
+    try:
+        latest_file = get_latest_noaa_file()
 
-    if latest_file is None:
-        return
+        if latest_file is None:
+            print("NOAA transformation failed.")
+            sys.exit(1)
 
-    noaa_records = load_noaa_data(
-        latest_file
-    )
+        noaa_records = load_noaa_data(
+            latest_file
+        )
 
-    if not noaa_records:
-        return
+        if not noaa_records:
+            print("NOAA data loading failed or dataset is empty.")
+            sys.exit(1)
 
-    transformed_records = transform_noaa_data(
-        noaa_records
-    )
+        transformed_records = transform_noaa_data(
+            noaa_records
+        )
 
-    save_transformed_noaa_data(
-        transformed_records
-    )
+        if not transformed_records:
+            print("No NOAA storm records transformed.")
+            sys.exit(1)
+
+        output_file = save_transformed_noaa_data(
+            transformed_records
+        )
+
+        if output_file is None:
+            print("NOAA data saving failed.")
+            sys.exit(1)
+
+        print(
+            "NOAA Storm Events transformation completed successfully."
+        )
+
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        AttributeError,
+        OverflowError,
+        csv.Error
+    ) as error:
+        print(f"NOAA transformation failed: {error}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

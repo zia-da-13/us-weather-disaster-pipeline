@@ -1,5 +1,8 @@
+
 import gzip
 import shutil
+import sys
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -109,6 +112,10 @@ def download_noaa_file(filename):
 
         response.raise_for_status()
 
+        if not response.content:
+            print("Downloaded NOAA file is empty.")
+            return None
+
         project_root = Path(
             __file__
         ).resolve().parents[2]
@@ -147,7 +154,7 @@ def download_noaa_file(filename):
 
         return compressed_file
 
-    except requests.RequestException as error:
+    except (requests.RequestException, OSError) as error:
         print(
             f"Error downloading NOAA data: {error}"
         )
@@ -164,6 +171,7 @@ def extract_csv_file(compressed_file):
         return None
 
     csv_file = compressed_file.with_suffix("")
+    temporary_file = csv_file.with_suffix(".csv.tmp")
 
     try:
         with gzip.open(
@@ -172,7 +180,7 @@ def extract_csv_file(compressed_file):
         ) as source_file:
 
             with open(
-                csv_file,
+                temporary_file,
                 "wb"
             ) as destination_file:
 
@@ -181,16 +189,26 @@ def extract_csv_file(compressed_file):
                     destination_file
                 )
 
+        if temporary_file.stat().st_size == 0:
+            print("Extracted NOAA CSV file is empty.")
+            temporary_file.unlink(missing_ok=True)
+            return None
+
+        temporary_file.replace(csv_file)
+
         print(
             f"NOAA CSV extracted to: {csv_file}"
         )
 
         return csv_file
 
-    except OSError as error:
+    except (OSError, EOFError, zlib.error) as error:
         print(
             f"Error extracting NOAA file: {error}"
         )
+
+        temporary_file.unlink(missing_ok=True)
+
         return None
 
 
@@ -199,28 +217,36 @@ def main():
     Run the NOAA Storm Events extraction pipeline.
     """
 
-    filename = find_latest_noaa_file()
+    try:
+        filename = find_latest_noaa_file()
 
-    if filename is None:
-        return
+        if filename is None:
+            print("NOAA file discovery failed.")
+            sys.exit(1)
 
-    compressed_file = download_noaa_file(
-        filename
-    )
+        compressed_file = download_noaa_file(
+            filename
+        )
 
-    if compressed_file is None:
-        return
+        if compressed_file is None:
+            print("NOAA file download failed.")
+            sys.exit(1)
 
-    csv_file = extract_csv_file(
-        compressed_file
-    )
+        csv_file = extract_csv_file(
+            compressed_file
+        )
 
-    if csv_file is None:
-        return
+        if csv_file is None:
+            print("NOAA CSV extraction failed.")
+            sys.exit(1)
 
-    print(
-        "NOAA Storm Events extraction completed successfully."
-    )
+        print(
+            "NOAA Storm Events extraction completed successfully."
+        )
+
+    except (OSError, ValueError, TypeError) as error:
+        print(f"NOAA Storm Events extraction failed: {error}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

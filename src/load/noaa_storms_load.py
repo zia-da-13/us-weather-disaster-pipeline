@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -182,17 +183,40 @@ def load_noaa_to_database(records):
 
 
 def main():
-    latest_file = get_latest_noaa_file()
-
-    if latest_file is None:
-        return
+    """
+    Run the NOAA Storm Events loading pipeline.
+    """
 
     try:
+        latest_file = get_latest_noaa_file()
+
+        if latest_file is None:
+            print("NOAA loading failed.")
+            sys.exit(1)
+
         records = load_noaa_data(latest_file)
+
+        if not isinstance(records, list):
+            print("Invalid NOAA data format.")
+            sys.exit(1)
 
         if not records:
             print("No NOAA records to load.")
-            return
+            sys.exit(1)
+
+        for record in records:
+            if not isinstance(record, dict):
+                print("Invalid NOAA record format.")
+                sys.exit(1)
+
+            if (
+                type(record.get("event_id")) is not int
+                or record["event_id"] <= 0
+            ):
+                print("Invalid or missing NOAA event ID.")
+                sys.exit(1)
+
+        print("NOAA event ID validation completed successfully.")
 
         prepared_records = prepare_records(records)
 
@@ -200,8 +224,16 @@ def main():
 
         print("NOAA Storm Events loading completed successfully.")
 
-    except (psycopg.Error, OSError, ValueError, TypeError) as error:
+    except (
+        psycopg.Error,
+        OSError,
+        ValueError,
+        TypeError,
+        AttributeError,
+        OverflowError
+    ) as error:
         print(f"NOAA loading failed: {error}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
