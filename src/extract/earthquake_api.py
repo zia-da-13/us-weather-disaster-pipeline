@@ -1,4 +1,6 @@
+
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -42,10 +44,6 @@ def save_raw_earthquake_data(earthquake_data):
     Save raw USGS earthquake data as a timestamped JSON file.
     """
 
-    if earthquake_data is None:
-        print("No earthquake data available to save.")
-        return None
-
     project_root = Path(__file__).resolve().parents[2]
 
     output_directory = (
@@ -86,23 +84,29 @@ def save_raw_earthquake_data(earthquake_data):
 def main():
     earthquake_data = extract_earthquake_data()
 
-    if earthquake_data:
-        earthquake_count = earthquake_data.get(
-            "metadata",
-            {}
-        ).get(
-            "count",
-            0
-        )
+    if not earthquake_data:
+        print("Earthquake extraction failed.")
+        sys.exit(1)
 
-        print(
-            f"Number of earthquakes retrieved: "
-            f"{earthquake_count}"
-        )
+    earthquake_records = earthquake_data.get("features", [])
 
-        save_raw_earthquake_data(
-            earthquake_data
-        )
+    if not earthquake_records:
+        print("No earthquake records retrieved.")
+        sys.exit(1)
+
+    print(
+        f"Number of earthquakes retrieved: "
+        f"{len(earthquake_records)}"
+    )
+
+    try:
+        save_raw_earthquake_data(earthquake_data)
+
+    except OSError as error:
+        print(f"Error saving earthquake data: {error}")
+        sys.exit(1)
+
+    print("Earthquake extraction completed successfully.")
 
 
 if __name__ == "__main__":

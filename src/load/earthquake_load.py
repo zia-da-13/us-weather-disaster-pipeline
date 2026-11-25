@@ -1,6 +1,7 @@
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import psycopg
@@ -104,22 +105,40 @@ def load_earthquakes_to_database(earthquake_records):
 
 
 def main():
-    latest_file = get_latest_earthquake_file()
-
-    if latest_file is None:
-        return
-
-    earthquake_records = load_earthquake_data(latest_file)
-
-    if not earthquake_records:
-        print("No earthquake records to load.")
-        return
-
     try:
+        latest_file = get_latest_earthquake_file()
+
+        if latest_file is None:
+            print("Earthquake loading failed.")
+            sys.exit(1)
+
+        earthquake_records = load_earthquake_data(latest_file)
+
+        if not isinstance(earthquake_records, list):
+            print("Invalid earthquake data format.")
+            sys.exit(1)
+
+        if not earthquake_records:
+            print("No earthquake records to load.")
+            sys.exit(1)
+
+        for record in earthquake_records:
+            if not isinstance(record, dict) or not record.get("earthquake_id"):
+                print("Invalid or missing earthquake ID.")
+                sys.exit(1)
+
         load_earthquakes_to_database(earthquake_records)
+
         print("Earthquake loading completed successfully.")
-    except (psycopg.Error, OSError, ValueError) as error:
+
+    except (
+        psycopg.Error,
+        OSError,
+        ValueError,
+        TypeError
+    ) as error:
         print(f"Earthquake loading failed: {error}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

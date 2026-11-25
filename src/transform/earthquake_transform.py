@@ -1,4 +1,6 @@
+
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -72,9 +74,9 @@ def transform_earthquake_data(earthquake_data):
 
     for feature in features:
 
-        properties = feature.get("properties", {})
-        geometry = feature.get("geometry", {})
-        coordinates = geometry.get("coordinates", [])
+        properties = feature.get("properties") or {}
+        geometry = feature.get("geometry") or {}
+        coordinates = geometry.get("coordinates") or []
 
         longitude = None
         latitude = None
@@ -141,11 +143,6 @@ def save_transformed_earthquake_data(
         / "earthquakes"
     )
 
-    output_directory.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
     timestamp = datetime.now(
         timezone.utc
     ).strftime("%Y%m%d_%H%M%S")
@@ -156,6 +153,11 @@ def save_transformed_earthquake_data(
     )
 
     try:
+        output_directory.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
         with open(
             output_file,
             "w",
@@ -188,25 +190,50 @@ def main():
     Run the earthquake transformation pipeline.
     """
 
-    latest_file = get_latest_earthquake_file()
+    try:
+        latest_file = get_latest_earthquake_file()
 
-    if latest_file is None:
-        return
+        if latest_file is None:
+            print("Earthquake transformation failed.")
+            sys.exit(1)
 
-    earthquake_data = load_earthquake_data(
-        latest_file
-    )
+        earthquake_data = load_earthquake_data(
+            latest_file
+        )
 
-    if earthquake_data is None:
-        return
+        if earthquake_data is None:
+            print("Earthquake data loading failed.")
+            sys.exit(1)
 
-    transformed_records = transform_earthquake_data(
-        earthquake_data
-    )
+        transformed_records = transform_earthquake_data(
+            earthquake_data
+        )
 
-    save_transformed_earthquake_data(
-        transformed_records
-    )
+        if not transformed_records:
+            print("No earthquake records transformed.")
+            sys.exit(1)
+
+        output_file = save_transformed_earthquake_data(
+            transformed_records
+        )
+
+        if output_file is None:
+            print("Earthquake data saving failed.")
+            sys.exit(1)
+
+        print(
+            "Earthquake transformation completed successfully."
+        )
+
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        AttributeError,
+        OverflowError
+    ) as error:
+        print(f"Earthquake transformation failed: {error}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
