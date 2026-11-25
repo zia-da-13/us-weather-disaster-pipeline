@@ -1,6 +1,7 @@
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import psycopg
@@ -8,11 +9,16 @@ from dotenv import load_dotenv
 
 
 def get_project_root():
+    """Return the project root directory."""
+
     return Path(__file__).resolve().parents[2]
 
 
 def get_latest_weather_file():
+    """Find the latest transformed weather JSON file."""
+
     project_root = get_project_root()
+
     processed_directory = (
         project_root / "data" / "processed" / "weather"
     )
@@ -31,19 +37,37 @@ def get_latest_weather_file():
     )
 
     print(f"Latest weather file: {latest_file}")
+
     return latest_file
 
 
 def load_weather_data(file_path):
-    with open(file_path, "r", encoding="utf-8") as file:
+    """Read transformed weather records from a JSON file."""
+
+    with open(
+        file_path,
+        "r",
+        encoding="utf-8"
+    ) as file:
+
         weather_records = json.load(file)
 
+    if not isinstance(weather_records, list):
+        raise ValueError("Invalid transformed weather JSON structure.")
+
+    if not weather_records:
+        raise ValueError("No weather records to load.")
+
     print(f"Loaded {len(weather_records)} weather records.")
+
     return weather_records
 
 
 def load_weather_to_database(weather_records):
+    """Insert or update weather forecast records in PostgreSQL."""
+
     project_root = get_project_root()
+
     load_dotenv(project_root / ".env")
 
     connection_settings = {
@@ -98,8 +122,13 @@ def load_weather_to_database(weather_records):
     """
 
     with psycopg.connect(**connection_settings) as connection:
+
         with connection.cursor() as cursor:
-            cursor.executemany(insert_query, weather_records)
+
+            cursor.executemany(
+                insert_query,
+                weather_records
+            )
 
     print(
         f"Successfully processed {len(weather_records)} "
@@ -108,24 +137,36 @@ def load_weather_to_database(weather_records):
 
 
 def main():
-    latest_file = get_latest_weather_file()
-
-    if latest_file is None:
-        return
+    """Run the weather loading pipeline."""
 
     try:
+        latest_file = get_latest_weather_file()
+
+        if latest_file is None:
+            print("Weather loading failed: no transformed file.")
+            sys.exit(1)
+
         weather_records = load_weather_data(latest_file)
 
-        if not weather_records:
-            print("No weather records to load.")
-            return
-
         for record in weather_records:
-            if not record.get("start_time"):
-                print("Weather loading stopped: missing start_time.")
-                return
+
+            if not isinstance(record, dict):
+                raise ValueError("Invalid weather record structure.")
+
+            start_time = record.get("start_time")
+
+            if not isinstance(start_time, str) or not start_time.strip():
+                raise ValueError(
+                    "Weather record is missing start_time."
+                )
+
+        print(
+            "Weather composite key validation "
+            "completed successfully."
+        )
 
         load_weather_to_database(weather_records)
+
         print("Weather loading completed successfully.")
 
     except (
@@ -133,9 +174,14 @@ def main():
         OSError,
         ValueError,
         TypeError,
-        json.JSONDecodeError
+        KeyError,
+        AttributeError,
+        OverflowError
     ) as error:
+
         print(f"Weather loading failed: {error}")
+
+        sys.exit(1)
 
 
 if __name__ == "__main__":
